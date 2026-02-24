@@ -8,22 +8,29 @@
 # ========== HTTP头字段 ==========
 # 这些是放在请求/响应头里的标识，用来传递额外的信息
 
-# 请求ID - 用来追踪一个请求的完整链路
-# 比如一个请求经过好几个服务，这个ID会一直带着，方便查问题
+# 定义一个常量，名字是HDR_REQUEST_ID，值是字符串"X-Request-Id"
+# HDR是"Header"（HTTP头）的缩写
+# REQUEST_ID表示这是请求ID相关的头
+# 等号右边是具体的HTTP头字段名，遵循HTTP协议规范，X-前缀表示是自定义头
 HDR_REQUEST_ID = "X-Request-Id"
 
-# 响应耗时 - 接口处理花了多少毫秒
-# 返回给客户端看，方便前端知道接口响应快慢
+# 定义一个常量，名字是HDR_RESPONSE_TIME_MS，值是字符串"X-Response-Time-Ms"
+# RESPONSE_TIME表示响应时间，MS是毫秒的缩写
+# 这个头用来告诉客户端服务器处理这个请求花了多少毫秒
 HDR_RESPONSE_TIME_MS = "X-Response-Time-Ms"
 
-# 缓存控制 - 告诉浏览器要不要缓存这个接口的返回结果
-# 比如：不想让浏览器缓存就设成 "no-cache"
+# 定义一个常量，名字是HDR_CACHE_CONTROL，值是字符串"Cache-Control"
+# CACHE_CONTROL是HTTP标准头，不是自定义的，所以没有X-前缀
+# 这个头用来控制浏览器或CDN等缓存服务器的缓存行为
 HDR_CACHE_CONTROL = "Cache-Control"
 
 
 # ========== 应用内部状态 ==========
 # 这是在程序内部存数据用的键名
 
-# 请求ID的存储键名 - 把请求头里的ID存到程序状态里
-# 这样在代码的任何地方都能通过这个键拿到请求ID，记日志时带上它
+# 定义一个常量，名字是STATE_REQUEST_ID，值是字符串"request_id"
+# STATE表示这是应用状态（application state）中用的键
+# REQUEST_ID表示这是存储请求ID用的键名
+# 这个键用来在应用程序内部状态中存储和传递请求ID
+# 比如在FastAPI中可以通过request.state.request_id访问
 STATE_REQUEST_ID = "request_id"

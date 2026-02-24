@@ -131,3 +131,62 @@ ERROR_STATUS: dict[str, int] = {
     "storage.db_error": 500,
 }
 
+
+1.6 app/core/errors.py
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Mapping, NoReturn
+
+from app.core.error_codes import ERROR_MESSAGES, ERROR_STATUS
+
+
+@dataclass
+class AppError(Exception):
+    code: str
+    http_status: int = 400
+    message: str | None = None
+    meta: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        Exception.__init__(self, self.message or self.code)
+
+
+def resolve_message(code: str, default: str | None = None) -> str:
+    c = str(code or "").strip()
+    if not c:
+        return str(default or "")
+    msg = ERROR_MESSAGES.get(c)
+    if msg is not None:
+        return str(msg)
+    return str(default or c)
+
+
+def err(
+    code: str,
+    *,
+    http_status: int | None = None,
+    message: str | None = None,
+    meta: Mapping[str, Any] | None = None,
+) -> AppError:
+    c = str(code)
+    st = int(http_status) if http_status is not None else int(ERROR_STATUS.get(c, 400))
+    meta_dict: dict[str, Any] | None
+    if meta is None:
+        meta_dict = None
+    elif isinstance(meta, dict):
+        meta_dict = meta
+    else:
+        meta_dict = dict(meta)
+    msg = message if message is not None else resolve_message(c, c)
+    return AppError(code=c, http_status=st, message=msg, meta=meta_dict)
+
+
+def raise_err(
+    code: str,
+    *,
+    http_status: int | None = None,
+    message: str | None = None,
+    meta: Mapping[str, Any] | None = None,
+) -> NoReturn:
+    raise err(code, http_status=http_status, message=message, meta=meta)
