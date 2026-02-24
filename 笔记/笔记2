@@ -1,0 +1,133 @@
+1.1 app/core/http_consts.py
+HDR_REQUEST_ID = "X-Request-Id"
+HDR_RESPONSE_TIME_MS = "X-Response-Time-Ms"
+HDR_CACHE_CONTROL = "Cache-Control"
+
+STATE_REQUEST_ID = "request_id"
+
+
+1.2 app/core/enums.py
+from enum import Enum
+
+class Env(str, Enum):
+    dev = "dev"
+    prod = "prod"
+    production = "production"
+    staging = "staging"
+
+class JwtAlg(str, Enum):
+    HS256 = "HS256"
+    RS256 = "RS256"
+
+
+1.3 app/core/api_schemas.py
+from __future__ import annotations
+
+from typing import Any, Generic, TypeVar
+
+from pydantic import BaseModel, ConfigDict
+
+T = TypeVar("T")
+
+
+class Meta(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class ApiResponse(BaseModel, Generic[T]):
+    data: T
+    meta: Meta | None = None
+
+
+class Empty(BaseModel):
+    ok: bool = True
+
+
+class ActionResult(BaseModel):
+    ok: bool = True
+
+
+class ErrorInfo(BaseModel):
+    code: str
+    message: Any
+    request_id: str
+    meta: dict[str, Any] | None = None
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorInfo
+
+
+1.4 app/core/api_response.py
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel
+
+from app.core.api_schemas import Meta
+
+
+def ok(data: Any, meta: dict[str, Any] | Meta | None = None) -> dict:
+    if meta is None:
+        return {"data": data}
+    if isinstance(meta, Meta):
+        return {"data": data, "meta": meta.model_dump()}
+    if isinstance(meta, BaseModel):
+        return {"data": data, "meta": meta.model_dump()}
+    return {"data": data, "meta": dict(meta)}
+
+
+1.5 app/core/error_codes.py
+from __future__ import annotations
+
+ERROR_MESSAGES: dict[str, str] = {
+    "error.validation_failed": "validation_failed",
+    "error.internal": "internal_error",
+    "error.http": "http_error",
+    "error.rate_limited": "rate_limited",
+
+    "auth.bearer_required": "Missing bearer token",
+    "auth.access_token_invalid": "Invalid access token",
+    "auth.access_token_expired": "Token expired",
+    "auth.user_inactive": "User disabled or not found",
+    "auth.email_taken": "Email already exists",
+    "auth.credentials_invalid": "Invalid credentials",
+    "auth.refresh_token_invalid": "Invalid refresh token",
+    "auth.refresh_token_expired": "Refresh expired",
+
+    "rbac.forbidden": "forbidden",
+    "rbac.role_required": "no_role",
+    "rbac.permission_missing": "missing_perms",
+
+    "admin.role_not_found": "role not found",
+    "admin.user_not_found": "user not found",
+
+    "storage.db_error": "db_error",
+}
+
+ERROR_STATUS: dict[str, int] = {
+    "error.validation_failed": 422,
+    "error.internal": 500,
+    "error.http": 400,
+    "error.rate_limited": 429,
+
+    "auth.bearer_required": 401,
+    "auth.access_token_invalid": 401,
+    "auth.access_token_expired": 401,
+    "auth.user_inactive": 401,
+    "auth.email_taken": 409,
+    "auth.credentials_invalid": 401,
+    "auth.refresh_token_invalid": 401,
+    "auth.refresh_token_expired": 401,
+
+    "rbac.forbidden": 403,
+    "rbac.role_required": 403,
+    "rbac.permission_missing": 403,
+
+    "admin.role_not_found": 404,
+    "admin.user_not_found": 404,
+
+    "storage.db_error": 500,
+}
+
