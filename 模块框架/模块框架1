@@ -1,0 +1,40 @@
+# 1. core 核心基础模块说明
+#
+# 这个目录（core）存放项目的核心基础代码，包括常量定义、枚举、数据模型、
+# 异常处理、日志配置等。这些是整个应用的基石，其他模块都会依赖这里的功能。
+# 将核心代码集中在这里，便于统一管理和维护。
+
+app/
+├── core/                                   # 核心基础模块
+│   ├── http_consts.py                  (1.1)  # HTTP相关常量配置
+│   ├── enums.py                         (1.2)  # 枚举常量定义
+│   ├── api_schemas.py                   (1.3)  # API数据模型定义
+│   ├── api_response.py                   (1.4)  # 接口响应格式化工具
+│   ├── error_codes.py                    (1.5)  # 错误码定义模块
+│   ├── errors.py                         (1.6)  # 自定义异常处理
+│   ├── request_context.py                 (1.7)  # 请求上下文管理
+│   ├── redaction.py                       (1.8)  # 敏感信息脱敏
+│   ├── logging_setup.py                   (1.9)  # 日志系统配置
+│   ├── security_defaults.py               (1.10) # 安全响应头默认值
+│   └── config.py                          (1.11) # 应用配置模块
+
+# 各模块职责说明：
+#
+# 1.1 http_consts.py:    存放HTTP请求/响应头常量，如X-Request-Id、Cache-Control等
+# 1.2 enums.py:          定义枚举类型，如运行环境（dev/prod）、JWT算法（HS256/RS256）
+# 1.3 api_schemas.py:    定义API数据模型（Pydantic），统一请求/响应格式
+# 1.4 api_response.py:   包装成功响应，保证所有接口返回格式一致
+# 1.5 error_codes.py:    集中定义错误码、错误消息和HTTP状态码的映射
+# 1.6 errors.py:         自定义异常类，统一错误抛出和处理
+# 1.7 request_context.py: 使用ContextVar存储请求级上下文（请求ID、用户ID等）
+# 1.8 redaction.py:      敏感信息脱敏，防止密码、token等泄露到日志
+# 1.9 logging_setup.py:  配置日志格式（JSON）、自动添加请求ID、脱敏处理
+# 1.10 security_defaults.py: 定义安全响应头默认值（HSTS、X-Frame-Options等）
+# 1.11 config.py:        从环境变量加载所有配置，集中管理
+
+# 核心模块分层关系：
+#
+# 基础常量层 (1.1-1.2) → 数据模型层 (1.3-1.4) → 错误处理层 (1.5-1.7)
+# → 安全日志层 (1.8-1.10) → 配置管理层 (1.11)
+#
+# 下层模块被上层模块依赖，配置模块（1.11）被所有需要读取配置的模块依赖
