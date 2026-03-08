@@ -1,0 +1,102 @@
+# 4. API接口层模块说明
+#
+# 这个目录（api）是项目的接口层，负责处理HTTP请求和响应。
+# 包括路由定义、中间件、异常处理、健康检查、OpenAPI文档等。
+# 这一层是项目的入口，所有外部请求都从这里进入。
+
+app/
+└── api/                                    # API接口层
+    ├── routes_consts.py                (4.1)  # 路由常量定义，如不需要缓存的路径集合
+    ├── response.py                      (4.2)  # 响应增强工具，在core/api_response基础上增加缓存控制
+    ├── openapi.py                       (4.3)  # OpenAPI文档定制，统一添加响应头和错误模型
+    ├── exception_handlers.py             (4.4)  # 全局异常处理器，统一处理各种异常并记录审计
+    ├── health.py                         (4.5)  # 健康检查接口，用于存活检查、就绪检查、版本信息
+    ├── startup_checks.py                 (4.6)  # 启动前检查，验证配置和依赖服务是否就绪
+    │
+    └── middleware/                        # 中间件目录
+        ├── real_ip.py                  (4.7)  # 获取客户端真实IP，处理代理转发的情况
+        ├── request_context.py           (4.8)  # 请求上下文中间件，管理请求ID、上下文变量
+        ├── cors.py                      (4.9)  # CORS跨域中间件，处理跨域请求
+        ├── security_headers.py          (4.10) # 安全响应头中间件，添加HSTS、X-Frame-Options等
+        ├── tenant.py                    (4.11) # 租户中间件，从请求中解析工作空间ID
+        └── rate_limit.py                (4.12) # 限流中间件，基于Redis实现IP限流
+
+# 各模块职责说明：
+#
+# 4.1 routes_consts.py:   定义不需要缓存的路径集合，如登录、登出、授权等敏感接口
+#
+# 4.2 response.py:        在core/api_response基础上增加缓存控制功能，
+#                         提供ok_no_store函数，返回数据同时设置no-store头
+#
+# 4.3 openapi.py:         定制Swagger文档，自动添加通用响应头（请求ID、响应时间）、
+#                         错误响应模型，为敏感接口添加Cache-Control头
+#
+# 4.4 exception_handlers.py: 全局异常处理器，处理4种异常：
+#                          - AppError（自定义业务异常）
+#                          - RequestValidationError（请求验证失败）
+#                          - StarletteHTTPException（HTTP异常）
+#                          - Exception（未捕获的异常）
+#                          统一返回格式并记录审计日志
+#
+# 4.5 health.py:          提供三个健康检查接口：
+#                          - /healthz: 存活检查，只要应用运行就返回ok
+#                          - /readyz: 就绪检查，检查DB、Redis、ES是否正常
+#                          - /version: 版本信息，返回应用名称和环境
+#
+# 4.6 startup_checks.py:  启动前检查，在生产环境中检查失败会阻止启动：
+#                          - JWT密钥强度（至少32位）
+#                          - CORS配置合理性（通配符源不能携带凭证）
+#                          - Redis、DB、ES连接
+#
+# 4.7 real_ip.py:         从请求中获取真实IP，处理代理转发的情况：
+#                          - X-Forwarded-For头的第一个IP
+#                          - X-Real-IP头
+#                          - request.client.host（直连IP）
+#
+# 4.8 request_context.py: 核心中间件，负责：
+#                          - 处理请求ID（验证或生成）
+#                          - 设置上下文变量（请求ID、用户ID、IP、User-Agent）
+#                          - 初始化审计上下文
+#                          - 计算响应时间并添加响应头
+#                          - 注册后台任务（刷新审计、清理上下文）
+#
+# 4.9 cors.py:            安装CORS中间件，根据配置允许特定源的跨域请求
+#
+# 4.10 security_headers.py: 添加安全响应头：
+#                          - Strict-Transport-Security (HSTS)
+#                          - X-Content-Type-Options
+#                          - X-Frame-Options
+#                          - Referrer-Policy
+#                          - Permissions-Policy
+#                          - Content-Security-Policy
+#
+# 4.11 tenant.py:          从请求中解析工作空间ID，优先级：
+#                          - 请求头 X-Workspace-Id
+#                          - 查询参数 workspace_id
+#                          - URL路径 /workspace/{id} 或 /workspaces/{id}
+#
+# 4.12 rate_limit.py:      基于Redis的限流实现：
+#                          - 固定时间窗口算法
+#                          - 支持按IP限流
+#                          - 自动记录审计日志
+#                          - 超过限制抛出429异常
+
+# 请求处理流程：
+#
+# 1. 请求进入 → CORS中间件 (4.9) → 处理跨域
+#         ↓
+# 2. 请求上下文中间件 (4.8) → 设置请求ID、初始化审计
+#         ↓
+# 3. 安全头中间件 (4.10) → 添加安全响应头
+#         ↓
+# 4. 租户中间件 (4.11) → 解析workspace_id
+#         ↓
+# 5. 限流中间件 (4.12) → 检查IP限流
+#         ↓
+# 6. 路由处理函数 → 执行业务逻辑
+#         ↓
+# 7. 响应返回 → 请求上下文中间件添加响应头、注册后台任务
+#         ↓
+# 8. 后台任务 → 刷新审计日志到数据库、清理上下文
+#         ↓
+# 9. 异常发生 → 异常处理器 (4.4) 捕获并返回统一格式
