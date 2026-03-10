@@ -1,0 +1,106 @@
+三. 初始化alembic
+Alembic是SQLAlchemy的数据库迁移工具。
+主要帮我们把模型的变化安全、可追踪地同步到数据库结构里，而不是手动改表。
+每次改表都会生成一个迁移版本，可回滚且可审计。
+自动生成迁移脚本：对比当前数据库结构和SQLAlchemy模型metadata，用 --autogenerate 生成迁移草稿，再人工确认。
+一般的步骤的是初始化一次，然后生成迁移，最后应用到数据库
+
+3.1 初始化
+$ alembic init alembic
+
+3.2 打开alembic/env.py直接改为
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+from logging.config import fileConfig
+
+import importlib
+import importlib.util
+
+from alembic import context
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from app.core.config import settings
+from app.infra.db.base import Base
+
+config = context.config
+if config.config_file_name is not None:
+    fileConfig(config.config_file_name)
+
+target_metadata = Base.metadata
+
+
+def _import_models(dotted: str, fallback_relpath: str):
+    try:
+        return importlib.import_module(dotted)
+    except Exception:
+        path = os.path.join(BASE_DIR, fallback_relpath)
+        spec = importlib.util.spec_from_file_location(dotted, path)
+        if spec is None or spec.loader is None:
+            raise
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+_audit_models = _import_models("app.modules.audit.models", "app/modules/audit/models.py")  # noqa: F401,E402
+_auth_models = _import_models("app.modules.auth.models", "app/modules/auth/models.py")  # noqa: F401,E402
+_resources_models = _import_models("app.modules.resources.models", "app/modules/resources/models.py")  # noqa: F401,E402
+
+
+def run_migrations_offline() -> None:
+    context.configure(
+        url=str(settings.database_url),
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+        compare_type=True,
+        compare_server_default=True,
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def do_run_migrations(connection: Connection) -> None:
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        compare_server_default=True,
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+async def run_migrations_online() -> None:
+    connectable: AsyncEngine = create_async_engine(
+        str(settings.database_url),
+        poolclass=pool.NullPool,
+    )
+
+    async with connectable.connect() as connection:
+        await connection.run_sync(do_run_migrations)
+
+    await connectable.dispose()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    asyncio.run(run_migrations_online())
+
+
+
+3.3 最后生成迁移创建表格
+$ alembic revision --autogenerate -m "init auth rbac resources"
+$ alembic upgrade head
+
