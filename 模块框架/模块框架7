@@ -1,0 +1,83 @@
+# 7. 权限授权模块说明
+#
+# 这个模块（authz）实现了基于RBAC（基于角色的访问控制）的权限管理功能。
+# 提供权限作用域定义、角色权限种子数据、权限检查服务以及FastAPI依赖。
+# 模块设计支持细粒度的权限控制，可以针对全局、工作空间、项目或具体资源进行授权。
+
+app/
+└── modules/
+    └── authz/                              # 权限授权模块
+        ├── consts.py                    (7.1)  # 权限作用域常量定义
+        ├── scope_keys.py                 (7.2)  # 作用域键的生成与解析工具
+        ├── seed.py                       (7.3)  # 预定义角色、权限种子数据
+        ├── seed_sync.py                   (7.4)  # 种子数据同步到数据库
+        ├── service.py                     (7.5)  # 核心权限检查服务
+        └── deps.py                        (7.6)  # 权限检查FastAPI依赖
+
+
+# 各模块职责说明：
+#
+# 7.1 consts.py:       定义权限作用域相关常量，目前只有 SCOPE_GLOBAL = "global"，
+#                      表示全局作用域，拥有所有权限。
+#
+# 7.2 scope_keys.py:   提供作用域键的生成与解析功能。
+#                       - scope_global()：返回全局作用域字符串 "global"
+#                       - scope_workspace(workspace_id)：生成 "workspace:{id}"
+#                       - scope_project(project_id)：生成 "project:{id}"
+#                       - scope_resource(resource_type, ref_id)：生成 "resource:{type}:{id}"
+#                       - ParsedScope 数据类：解析后的作用域结构，包含 kind、workspace_id 等字段
+#                       - parse_scope_key()：将作用域键字符串解析为 ParsedScope 对象
+#                       - scopes_with_global()：返回当前作用域和全局作用域的列表，用于权限查询时包含全局授权
+#
+# 7.3 seed.py:         预定义的角色和权限种子数据，用于系统初始化。
+#                       - ROLES：预定义角色列表 (name, description)，如 owner, admin, editor, viewer
+#                       - PERMISSIONS：预定义权限列表 (code, description)，如 doc.read, audio.write 等
+#                       - DEFAULT_ROLE_PERMS：默认角色拥有的权限代码映射，为各角色分配默认权限集合
+#
+# 7.4 seed_sync.py:    将 seed.py 中定义的种子数据同步到数据库。
+#                       - sync_authz() 异步函数，使用 PostgreSQL 的 ON CONFLICT 实现 upsert，
+#                         确保角色表和权限表与代码定义一致，并自动补全默认角色-权限关联。
+#
+# 7.5 service.py:      核心权限检查服务，提供 require_perms 函数。
+#                       - require_perms(db, user, scope_key, perm_codes)：检查用户是否拥有指定权限。
+#                         若用户是超级管理员直接放行；若无权限则记录审计日志并抛出 AppError 异常。
+#                         内部逻辑：先查询用户在该作用域下的角色，再查询角色所拥有的权限，与所需权限对比。
+#
+# 7.6 deps.py:         提供 FastAPI 依赖项工厂 permission_required，用于在路由层进行权限控制。
+#                       - permission_required(*perm_codes, scope_builder)：接收权限码和一个作用域构建器，
+#                         返回一个依赖函数，该函数会自动获取当前用户、动态生成作用域键，并调用 require_perms 进行校验。
+#                         若校验通过，则将用户对象返回给路由函数；否则抛出异常。
+
+
+# 模块工作流程：
+#
+# 1. 系统初始化时调用 seed_sync.sync_authz()，将种子角色和权限插入数据库。
+#
+# 2. 在需要进行权限控制的 API 路由中，使用 deps.permission_required 创建依赖：
+#    @router.get("/doc/{id}")
+#    async def get_doc(
+#        user: User = Depends(permission_required("doc.read", scope_builder=lambda r: f"workspace:{r.path_params['ws_id']}"))
+#    ):
+#        ...
+#
+# 3. 依赖内部自动获取当前登录用户，调用 scope_builder 生成作用域键。
+#
+# 4. 调用 service.require_perms 进行权限检查：
+#    - 检查超级管理员
+#    - 查询用户在该作用域下的角色
+#    - 查询角色拥有的权限
+#    - 对比缺失权限
+#
+# 5. 通过则返回用户对象，路由函数继续执行；不通过则抛出 AppError，由全局异常处理器处理。
+#
+#
+# 权限作用域设计说明：
+#
+# 作用域键格式：
+#   - global                         : 全局作用域，表示所有范围
+#   - workspace:{id}                  : 工作空间级别
+#   - project:{id}                     : 项目级别
+#   - resource:{type}:{id}             : 具体资源级别，如 resource:doc:100
+#
+# 在权限检查时，scopes_with_global 函数会将当前作用域键与全局作用域一起返回，
+# 使得用户在全局作用域下授予的角色也能在当前作用域生效，实现全局授权与局部授权并存。

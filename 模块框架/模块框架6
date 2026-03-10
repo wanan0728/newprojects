@@ -1,0 +1,137 @@
+# 6. 认证与授权模块说明
+#
+# 这个模块包含认证（Authentication）和授权（Authorization）两大功能。
+# 认证负责确认用户身份（登录、注册、刷新令牌），
+# 授权负责控制用户能做什么（RBAC权限模型、资源管理）。
+
+app/
+└── modules/
+    ├── auth/                              # 授权模块（RBAC模型）
+    │   └── models.py                    (6.1)  # 认证授权数据库模型
+    │
+    ├── resources/                         # 资源管理模块
+    │   └── models.py                    (6.2)  # 资源模型（workspace/project/resource三层结构）
+    │
+    └── authn/                             # 认证模块（登录/注册/刷新）
+         ├── consts.py                   (6.3)  # 认证常量
+         ├── schemas.py                   (6.4)  # 认证API请求/响应模型
+         ├── service.py                   (6.5)  # 认证核心服务
+         ├── deps.py                      (6.6)  # 认证依赖（get_current_user）
+         └── routes.py                    (6.7)  # 认证路由（register/login/refresh/logout/me）
+
+
+# 6.1 auth/models.py:   RBAC（基于角色的访问控制）完整实现，包含6张表：
+#                       - User：用户表（id, email, password_hash, is_active, is_superadmin）
+#                       - UserIdentity：外部身份表（provider, subject），为SSO预留
+#                       - Role：角色表（name, description），如"admin"、"editor"
+#                       - Permission：权限表（code, description），如"doc.read"、"user.create"
+#                       - RolePermission：角色-权限关联表（多对多）
+#                       - UserRoleGrant：用户-角色授权表，支持作用域（scope_key）
+#                         scope_key格式：global | workspace:{id} | project:{id} | resource:{type}:{ref_id}
+
+# 6.2 resources/models.py: 资源三层结构，实现细粒度权限控制：
+#                         - Workspace：工作空间/租户（最顶层），所有资源归属
+#                         - Project：项目（工作空间下的分组），用于组织资源
+#                         - Resource：统一资源目录，将业务资源映射为可授权对象
+#                           包含workspace_id、project_id、resource_type、ref_id
+#                           支持条件唯一索引，保证资源唯一性
+
+# 6.3 authn/consts.py:  认证模块常量：
+#                        - 刷新令牌格式：REFRESH_SEPARATOR = "."（RID和SECRET的分隔符）
+#                        - 长度限制：MAX_REFRESH_TOKEN_LEN、MAX_RID_LEN、MAX_SECRET_LEN
+#                        - Redis键前缀：REDIS_PREFIX_REFRESH、REDIS_PREFIX_TOKENVER
+#                        - 限流规则名称：RL_AUTH_REGISTER、RL_AUTH_LOGIN、RL_AUTH_REFRESH
+
+# 6.4 authn/schemas.py: 认证API的数据模型：
+#                        - RegisterReq：注册请求（email, password）
+#                        - LoginReq：登录请求（email, password）
+#                        - TokenResp：令牌响应（access_token, token_type, expires_in_minutes, refresh_token）
+#                        - RefreshReq：刷新请求（refresh_token）
+#                        - MeResp：用户信息响应（id, email, is_active, is_superadmin）
+
+# 6.5 authn/service.py:  刷新令牌核心服务：
+#                        - RefreshTokenPair数据类：rid（Redis键）+ secret（验证密钥）
+#                        - mint_refresh_token()：生成新的刷新令牌对（UUID + 随机secret）
+#                        - pack/unpack_refresh()：打包/解析刷新令牌（rid.secret）
+#                        - key_refresh()/key_tokenver()：生成Redis键名
+#                        - store_refresh()：存储刷新令牌到Redis（user_id|token_ver|sha256(secret)）
+#                        - get_tokenver()/bump_tokenver()：获取/增加令牌版本
+#                        - revoke_refresh()：撤销刷新令牌
+#                        - verify_and_consume_refresh()：验证并消费刷新令牌（Lua脚本保证原子性）
+
+# 6.6 authn/deps.py:    认证依赖项：
+#                        - get_current_user()：从请求头解析Bearer Token，
+#                          验证JWT、检查令牌版本、查询用户、检查激活状态、
+#                          设置用户ID到上下文、返回User对象
+#                        - 使用HTTPBearer解析token，auto_error=False自定义错误处理
+#                        - 每一步失败都记录审计日志并抛出相应异常
+
+# 6.7 authn/routes.py:  认证路由实现（5个接口）：
+#                        - POST /register：注册新用户
+#                          * 检查邮箱是否已存在
+#                          * 密码哈希存储
+#                          * 返回用户信息
+#                          * 限流：RL_AUTH_REGISTER
+#
+#                        - POST /login：用户登录
+#                          * 验证邮箱密码
+#                          * bump_tokenver使旧令牌失效（全端踢下线）
+#                          * 生成新的access_token和refresh_token
+#                          * refresh_token存储到Redis
+#                          * 限流：RL_AUTH_LOGIN
+#
+#                        - POST /refresh：刷新令牌
+#                          * 解析并验证refresh_token
+#                          * 一次性消费旧refresh_token（Lua脚本）
+#                          * 验证tokenver是否匹配
+#                          * 检查用户是否仍有效
+#                          * 生成新的access_token和refresh_token
+#                          * 限流：RL_AUTH_REFRESH
+#
+#                        - POST /logout：用户登出
+#                          * 撤销传入的refresh_token
+#                          * bump_tokenver使所有旧access_token失效
+#                          * 操作幂等，失败不影响
+#
+#                        - GET /me：获取当前用户信息
+#                          * 依赖get_current_user
+#                          * 返回用户基本信息
+
+
+# 模块间关系图：
+#
+# ┌─────────────────────────────────────────────────────────────────┐
+# │                        6.7 authn/routes.py                      │
+# │                   认证接口（register/login等）                   │
+# └─────────────────────────────────────────────────────────────────┘
+#                                │
+#                                ▼
+# ┌─────────────────────────────────────────────────────────────────┐
+# │                     6.6 authn/deps.py                           │
+# │                  get_current_user（验证JWT）                     │
+# └─────────────────────────────────────────────────────────────────┘
+#                                │
+#                                ▼
+# ┌─────────────────────────────────────────────────────────────────┐
+# │                     6.5 authn/service.py                        │
+# │       刷新令牌管理、令牌版本控制（Redis操作）                     │
+# └─────────────────────────────────────────────────────────────────┘
+#                                │
+#              ┌─────────────────┼─────────────────┐
+#              ▼                 ▼                 ▼
+# ┌─────────────────────┐ ┌───────────────┐ ┌──────────────┐
+# │  5. security模块    │ │ 6.1 auth/models│ │ 6.2 resources │
+# │ 密码/JWT基础功能     │ │   用户/角色表  │ │  资源模型      │
+# └─────────────────────┘ └───────────────┘ └──────────────┘
+
+
+# 安全特性总结：
+#
+# 1. 密码安全：Argon2哈希，抗暴力破解
+# 2. JWT安全：版本控制，支持吊销
+# 3. 刷新令牌：RID+SECRET双因子，SECRET存哈希，Redis存储，一次性消费
+# 4. 令牌版本：每次登录/登出增加版本，使旧令牌立即失效
+# 5. 限流保护：注册/登录/刷新接口IP限流
+# 6. RBAC权限：完整的角色-权限模型，支持作用域
+# 7. 资源隔离：workspace/project/resource三层结构
+# 8. 审计日志：所有认证操作都有记录

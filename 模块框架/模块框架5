@@ -1,0 +1,42 @@
+# 5. 安全核心模块说明
+#
+# 这个模块（security）提供系统的基础安全功能，包括密码加密、JWT令牌等。
+# 是整个系统的安全基石，不涉及业务逻辑，只提供纯粹的安全工具。
+
+app/
+└── modules/
+    └── security/                          # 安全核心模块
+        ├── password.py                (5.1)  # 密码哈希和验证（Argon2算法）
+        ├── jwt_claims.py               (5.2)  # JWT声明常量定义
+        └── jwt.py                      (5.3)  # JWT令牌生成和验证
+
+
+# 5.1 password.py:      密码安全处理，使用Argon2算法（目前最安全的密码哈希算法）
+#                      提供两个核心函数：
+#                      - hash_password(raw: str) -> str：将原始密码进行Argon2哈希
+#                      - verify_password(raw: str, hashed: str) -> bool：验证密码是否正确
+#                      使用argon2库，自动生成随机盐，抗暴力破解和彩虹表攻击
+
+# 5.2 jwt_claims.py:    定义JWT令牌中的所有声明字段名常量，避免硬编码字符串：
+#                      - CLAIM_ISS = "iss"：签发者（Issuer）
+#                      - CLAIM_SUB = "sub"：主题（Subject），本项目用作user_id
+#                      - CLAIM_VER = "ver"：令牌版本（Version），用于吊销
+#                      - CLAIM_TYP = "typ"：令牌类型（Type），如access/refresh
+#                      - CLAIM_IAT = "iat"：签发时间（Issued At）
+#                      - CLAIM_EXP = "exp"：过期时间（Expiration）
+#                      - TOKEN_TYPE_ACCESS = "access"：访问令牌类型值
+
+# 5.3 jwt.py:           JWT令牌的核心实现，包含：
+#                       - TokenPayload数据类：存储解码后的令牌信息（user_id, token_ver, typ）
+#                       - create_access_token()：生成访问令牌，包含iss、sub、ver、typ、iat、exp
+#                       - decode_access_token()：解码并验证访问令牌，检查签名、过期时间、签发者
+#                       - 支持令牌版本控制，用于实现令牌吊销功能
+
+
+# 模块间依赖关系：
+#
+# password.py (5.1) ← 被auth模块调用（注册/登录时加密和验证密码）
+#         ↑
+# jwt_claims.py (5.2) ← 被jwt.py调用（使用常量构建和解析JWT）
+#         ↑
+# jwt.py (5.3) ← 被authn模块调用（登录时生成令牌，认证时验证令牌）
