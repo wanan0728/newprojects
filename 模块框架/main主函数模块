@@ -1,0 +1,44 @@
+# 9. 主函数模块说明
+#
+# 这个模块（main.py）是整个应用的入口，负责启动、配置和关闭。
+# 它整合了核心组件、中间件、路由和生命周期管理。
+
+app/
+└── main.py                                 (9.1)  # 应用主入口
+
+# 9.1 main.py:       应用启动和关闭的生命周期管理，包含：
+#                     - lifespan 异步上下文管理器：启动时初始化数据库引擎、Redis、ES，
+#                       执行启动检查，同步权限数据；关闭时清理资源。
+#                     - 中间件注册：请求上下文、租户、CORS、安全头。
+#                     - 路由注册：健康检查、认证、管理员。
+#                     - 异常处理器和 OpenAPI 定制安装。
+
+
+# 生命周期流程说明：
+#
+# 1. 应用启动时，lifespan 上下文管理器执行 yield 之前的代码：
+#    - 设置日志
+#    - 创建数据库引擎与会话工厂
+#    - 创建 Redis 客户端
+#    - 创建 Elasticsearch 客户端
+#    - 运行启动前检查（JWT 强度、CORS 配置、Redis/DB/ES 连接）
+#    - 如果 auto_sync_authz 为 True，同步权限种子数据到数据库
+#
+# 2. 应用运行期间，处理 HTTP 请求，经过中间件和路由。
+#
+# 3. 应用关闭时，lifespan 执行 yield 之后的代码：
+#    - 关闭 Elasticsearch 连接
+#    - 关闭 Redis 连接
+#    - 关闭数据库连接池
+#
+#
+# 中间件注册顺序说明：
+#
+# 1. RequestContextMiddleware：最早执行，设置请求 ID 和审计上下文。
+# 2. TenantContextMiddleware：解析租户 ID 并设置上下文。
+# 3. CORS 中间件（通过 install_cors 添加，实际在 SecurityHeaders 之后？注意 install_cors 调用在 add_middleware 之后，但 CORS 中间件是 Starlette 内置，实际顺序可能取决于 add_middleware 的调用顺序，但 CORS 通常应尽早处理。
+# 4. SecurityHeadersMiddleware：最后添加响应头。
+#
+#
+# 配置来源：
+# 所有配置均从 settings 对象读取，该对象由 pydantic-settings 从环境变量加载。
